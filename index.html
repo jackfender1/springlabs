@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -392,13 +393,34 @@ dropzone.ondrop = (e)=>{
 };
 
 function handleFile(file){
-  if(!file || !file.type.startsWith('video/')) return;
+  errorLine.classList.remove('show');
+  if(!file){ return; }
+
+  const looksLikeVideo = file.type.startsWith('video/') ||
+    /\.(mp4|mov|m4v|webm|avi|mkv|3gp)$/i.test(file.name || '');
+
+  if(!looksLikeVideo){
+    showError("That file doesn't look like a video (" + (file.type || 'unknown type') + "). Try an MP4 or MOV.");
+    return;
+  }
+
   videoFile = file;
+  const codeNames = {1:'MEDIA_ERR_ABORTED',2:'MEDIA_ERR_NETWORK',3:'MEDIA_ERR_DECODE',4:'MEDIA_ERR_SRC_NOT_SUPPORTED'};
+  preview.onerror = ()=>{
+    const err = preview.error;
+    const codeName = err ? (codeNames[err.code] || ('code ' + err.code)) : 'unknown';
+    showError(
+      'Playback failed: ' + codeName + '. File: "' + file.name + '" (' +
+      (file.type || 'no MIME type') + ', ' + (file.size/1e6).toFixed(1) + ' MB). ' +
+      'If this keeps happening even with a plain MP4, it may be a restriction in this sandboxed preview rather than your file — try downloading the HTML file and opening it directly in your browser to compare.'
+    );
+    preview.style.display = 'none';
+    analyzeBtn.disabled = true;
+  };
   preview.src = URL.createObjectURL(file);
   preview.style.display = 'block';
   analyzeBtn.disabled = false;
   resultsEl.classList.remove('show');
-  errorLine.classList.remove('show');
 }
 
 function setStatus(msg){
@@ -449,34 +471,21 @@ analyzeBtn.onclick = async ()=>{
     const frames = await extractFrames(preview, 5);
     setStatus('Coach is reviewing the clip…');
 
-    const content = [
-      { type:'text', text:
-        `You are an experienced track and field coach. These ${frames.length} images are sequential frames sampled from a short video clip of an athlete performing ${selectedCategory.prompt}. ` +
-        `Assess their technique based only on what is visible in the frames (body position, angles, form). ` +
-        `Respond with ONLY a raw JSON object, no markdown fences, no commentary, matching exactly this shape: ` +
-        `{"score": number (1-10, one decimal allowed), "summary": string (1-2 sentences), "strengths": [string, string] (2 items, specific and short), "improvements": [string, string] (2 items, specific and short, actionable), "drill": string (one short suggested drill to work on the top improvement)}. ` +
-        `Be specific to what you can actually see. If the frames are unclear or don't show enough of the movement, still give your best honest assessment and note the limitation briefly in the summary.`
-      }
-    ];
-    frames.forEach(f=>{
-      content.push({ type:'image', source:{ type:'base64', media_type:'image/jpeg', data:f } });
-    });
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // Calls our own backend (server.js), which holds the real API key.
+    const response = await fetch('/api/analyze', {
       method:'POST',
       headers:{ 'Content-Type':'application/json' },
       body: JSON.stringify({
-        model:'claude-sonnet-4-6',
-        max_tokens:1000,
-        messages:[{ role:'user', content }]
+        categoryPrompt: selectedCategory.prompt,
+        frames: frames
       })
     });
 
-    if(!response.ok){ throw new Error('Analysis request failed (' + response.status + ')'); }
-    const data = await response.json();
-    const raw = data.content.map(b=>b.text||'').join('').trim();
-    const cleaned = raw.replace(/^```json/i,'').replace(/^```/,'').replace(/```$/,'').trim();
-    const parsed = JSON.parse(cleaned);
+    if(!response.ok){
+      const errBody = await response.json().catch(()=>({}));
+      throw new Error(errBody.error || ('Analysis request failed (' + response.status + ')'));
+    }
+    const parsed = await response.json();
 
     document.getElementById('scoreVal').textContent = parsed.score;
     document.getElementById('summaryText').textContent = parsed.summary;
