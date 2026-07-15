@@ -240,9 +240,18 @@
   <div class="panel" id="demo">
     <div class="panel-label"><span>Clip Analyzer</span><span class="mono">LIVE DEMO</span></div>
 
-    <div class="lanes" id="lanes"></div>
+    <div class="gate" id="gate">
+      <div class="dz-title" style="margin-bottom:8px;">Unlock with your subscriber email</div>
+      <div style="display:flex; gap:8px;">
+        <input type="email" id="emailInput" placeholder="you@email.com" style="flex:1; background:var(--navy-2); border:1px solid var(--line); border-radius:5px; color:var(--white); padding:10px 12px; font-size:13.5px;">
+        <button class="btn btn-primary" id="unlockBtn" style="padding:10px 18px;">Unlock</button>
+      </div>
+      <p class="gate-status" id="gateStatus" style="color:var(--gray); font-size:12.5px; margin-top:8px;">No active plan? <a href="#pricing" style="color:var(--red);">See pricing</a>.</p>
+    </div>
 
-    <div class="dropzone" id="dropzone">
+    <div class="lanes" id="lanes" style="display:none;"></div>
+
+    <div class="dropzone" id="dropzone" style="display:none;">
       <div class="dz-title">Drop a clip or click to upload</div>
       <p>MP4 / MOV, a few seconds is plenty</p>
       <input type="file" id="fileInput" accept="video/*" style="display:none">
@@ -250,7 +259,7 @@
 
     <video class="preview" id="preview" style="display:none" controls muted></video>
 
-    <div class="analyze-row">
+    <div class="analyze-row" id="analyzeRow" style="display:none;">
       <button class="btn btn-primary btn-analyze" id="analyzeBtn" disabled>Analyze technique</button>
     </div>
 
@@ -315,7 +324,7 @@
         <li>Progress history over time</li>
         <li>Drill suggestions per rep</li>
       </ul>
-      <button class="btn btn-ghost" onclick="fakeUpgrade('Athlete')">Start plan</button>
+      <button class="btn btn-ghost" onclick="startCheckout('price_1TtJ0eArgWZv9lLtDnEGCyty')">Start plan</button>
     </div>
     <div class="price-card featured">
       <div class="price-tier">Coach</div>
@@ -327,7 +336,7 @@
         <li>Team-wide progress dashboard</li>
         <li>Export reports for parents/recruiters</li>
       </ul>
-      <button class="btn btn-primary" onclick="fakeUpgrade('Coach')">Start plan</button>
+      <button class="btn btn-primary" onclick="startCheckout('price_1TtJ1NArgWZv9lLtGpUaEXxH')">Start plan</button>
     </div>
     <div class="price-card">
       <div class="price-tier">Program</div>
@@ -339,7 +348,7 @@
         <li>Multiple coach seats</li>
         <li>Priority support</li>
       </ul>
-      <button class="btn btn-ghost" onclick="fakeUpgrade('Program')">Talk to us</button>
+      <button class="btn btn-ghost" onclick="startCheckout('price_1TtJ33ArgWZv9lLtDe6VRUh1')">Start plan</button>
     </div>
   </div>
 </section>
@@ -514,12 +523,66 @@ analyzeBtn.onclick = async ()=>{
   }
 };
 
-function fakeUpgrade(tier){
-  const toast = document.getElementById('toast');
-  toast.textContent = tier + ' plan — this is a demo, connect Stripe here to go live.';
-  toast.classList.add('show');
-  setTimeout(()=> toast.classList.remove('show'), 3000);
+async function startCheckout(priceId){
+  try{
+    const res = await fetch('/api/create-checkout-session', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ priceId })
+    });
+    const data = await res.json();
+    if(data.url){ window.location.href = data.url; }
+    else{ alert('Checkout error: ' + (data.error || 'unknown')); }
+  }catch(err){
+    alert('Checkout error: ' + err.message);
+  }
 }
+
+const gateStatus = document.getElementById('gateStatus');
+const gate = document.getElementById('gate');
+
+async function unlockWithEmail(email){
+  gateStatus.textContent = 'Checking your subscription…';
+  try{
+    const res = await fetch('/api/check-subscription?email=' + encodeURIComponent(email));
+    const data = await res.json();
+    if(data.active){
+      try{ localStorage.setItem('springlabs_email', email); }catch(e){}
+      gate.style.display = 'none';
+      document.getElementById('lanes').style.display = 'flex';
+      document.getElementById('dropzone').style.display = 'block';
+      document.getElementById('analyzeRow').style.display = 'flex';
+    }else{
+      gateStatus.innerHTML = 'No active plan found for that email. <a href="#pricing" style="color:var(--red);">See pricing</a>.';
+    }
+  }catch(err){
+    gateStatus.textContent = 'Could not verify right now: ' + err.message;
+  }
+}
+
+document.getElementById('unlockBtn').onclick = ()=>{
+  const email = document.getElementById('emailInput').value.trim();
+  if(!email){ gateStatus.textContent = 'Enter the email you subscribed with.'; return; }
+  unlockWithEmail(email);
+};
+
+// Auto-unlock returning subscribers, and show a banner after checkout redirect
+(function(){
+  const params = new URLSearchParams(window.location.search);
+  if(params.get('checkout') === 'success'){
+    const toast = document.getElementById('toast');
+    toast.textContent = "Payment successful — enter your email below to unlock the analyzer.";
+    toast.classList.add('show');
+    setTimeout(()=> toast.classList.remove('show'), 5000);
+  }
+  try{
+    const saved = localStorage.getItem('springlabs_email');
+    if(saved){
+      document.getElementById('emailInput').value = saved;
+      unlockWithEmail(saved);
+    }
+  }catch(e){}
+})();
 </script>
 
 </body>
