@@ -116,6 +116,27 @@
   }
 
   .analyze-row{margin-top:16px; display:flex; gap:10px; align-items:center;}
+
+  .video-wrap{position:relative;}
+  .replay-overlay{
+    position:absolute; left:12px; right:12px; bottom:12px;
+    display:none; flex-direction:column; gap:10px;
+    background:rgba(27,37,50,0.96); border-left:4px solid var(--green);
+    border-radius:6px; padding:14px 16px; backdrop-filter:blur(2px);
+  }
+  .replay-overlay.improve-type{border-left-color:var(--red);}
+  .replay-overlay .ro-tag{
+    font-family:'JetBrains Mono'; font-size:10.5px; letter-spacing:0.1em; text-transform:uppercase;
+    color:var(--green);
+  }
+  .replay-overlay.improve-type .ro-tag{color:var(--red);}
+  .replay-overlay .ro-note{font-size:13.5px; color:var(--white); line-height:1.45;}
+  .replay-overlay .ro-actions{display:flex; justify-content:flex-end;}
+  .replay-overlay .ro-actions button{
+    font-family:'Oswald'; font-size:12px; letter-spacing:0.03em; text-transform:uppercase;
+    background:var(--red); color:var(--white); border:none; border-radius:4px;
+    padding:7px 14px; cursor:pointer;
+  }
   .btn-analyze{flex:1;}
   .btn-analyze:disabled{opacity:0.4; cursor:not-allowed;}
 
@@ -255,7 +276,10 @@
       <input type="file" id="fileInput" accept="video/*" style="display:none">
     </div>
 
-    <video class="preview" id="preview" style="display:none" controls muted></video>
+    <div class="video-wrap" id="videoWrap">
+      <video class="preview" id="preview" style="display:none" controls muted></video>
+      <div class="replay-overlay" id="replayOverlay"></div>
+    </div>
 
     <div class="analyze-row" id="analyzeRow" style="display:none;">
       <button class="btn btn-primary btn-analyze" id="analyzeBtn" disabled>Analyze technique</button>
@@ -278,6 +302,7 @@
         <ul class="fb-list" id="improveList"></ul>
       </div>
       <div class="drill" id="drillBox"></div>
+      <button class="btn btn-ghost" id="replayBtn" style="display:none; width:100%; margin-top:14px;">▶ Guided replay — see exactly what it saw</button>
     </div>
   </div>
 </section>
@@ -366,6 +391,7 @@ const CATEGORIES = [
 
 let selectedCategory = CATEGORIES[0];
 let videoFile = null;
+let lastMoments = [];
 
 const lanesEl = document.getElementById('lanes');
 CATEGORIES.forEach((c,i)=>{
@@ -454,6 +480,7 @@ async function extractFrames(videoEl, count){
   canvas.height = videoEl.videoHeight * scale;
   const ctx = canvas.getContext('2d');
   const frames = [];
+  const timestamps = [];
   for(let i=0;i<count;i++){
     const t = (duration * (i+0.5)) / count;
     await new Promise((resolve, reject)=>{
@@ -464,8 +491,9 @@ async function extractFrames(videoEl, count){
     ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
     frames.push(dataUrl.split(',')[1]);
+    timestamps.push(t);
   }
-  return frames;
+  return { frames, timestamps };
 }
 
 analyzeBtn.onclick = async ()=>{
@@ -475,7 +503,7 @@ analyzeBtn.onclick = async ()=>{
   setStatus('Reading frames…');
 
   try{
-    const frames = await extractFrames(preview, 5);
+    const { frames, timestamps } = await extractFrames(preview, 5);
     setStatus('Coach is reviewing the clip…');
 
     // Calls our own backend (server.js), which holds the real API key.
@@ -511,7 +539,17 @@ analyzeBtn.onclick = async ()=>{
 
     document.getElementById('drillBox').innerHTML = '<b>Try this:</b> ' + parsed.drill;
 
+    // Attach real timestamps to each moment for the guided replay
+    lastMoments = (parsed.moments || []).map(m => ({
+      ...m,
+      time: timestamps[(m.frame || 1) - 1] ?? 0
+    })).sort((a,b)=> a.time - b.time);
+
+    const replayBtn = document.getElementById('replayBtn');
+    replayBtn.style.display = lastMoments.length ? 'inline-block' : 'none';
+
     resultsEl.classList.add('show');
+    preview.currentTime = 0;
     clearStatus();
   }catch(err){
     clearStatus();
@@ -581,6 +619,58 @@ document.getElementById('unlockBtn').onclick = ()=>{
     }
   }catch(e){}
 })();
+
+const replayOverlay = document.getElementById('replayOverlay');
+let replayQueue = [];
+let replayActive = false;
+
+function runGuidedReplay(){
+  if(!lastMoments.length) return;
+  replayQueue = [...lastMoments];
+  replayActive = true;
+  preview.pause();
+  preview.currentTime = 0;
+  replayOverlay.style.display = 'none';
+  preview.controls = false;
+
+  preview.ontimeupdate = ()=>{
+    if(!replayActive) return;
+    const next = replayQueue[0];
+    if(next && preview.currentTime >= next.time){
+      preview.pause();
+      showMoment(next);
+      replayQueue.shift();
+    }
+  };
+
+  preview.onended = ()=> endReplay();
+
+  preview.play();
+}
+
+function showMoment(m){
+  replayOverlay.classList.toggle('improve-type', m.type === 'improvement');
+  replayOverlay.innerHTML =
+    '<div class="ro-tag">' + (m.type === 'improvement' ? 'Fix this' : "What's working") + '</div>' +
+    '<div class="ro-note">' + m.note + '</div>' +
+    '<div class="ro-actions"><button id="roContinue">Continue ▶</button></div>';
+  replayOverlay.style.display = 'flex';
+  document.getElementById('roContinue').onclick = ()=>{
+    replayOverlay.style.display = 'none';
+    if(replayQueue.length === 0){ endReplay(); }
+    else{ preview.play(); }
+  };
+}
+
+function endReplay(){
+  replayActive = false;
+  preview.ontimeupdate = null;
+  preview.onended = null;
+  preview.controls = true;
+  replayOverlay.style.display = 'none';
+}
+
+document.getElementById('replayBtn').onclick = runGuidedReplay;
 </script>
 
 </body>
