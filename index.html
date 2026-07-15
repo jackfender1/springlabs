@@ -626,6 +626,7 @@ let replayActive = false;
 
 function runGuidedReplay(){
   if(!lastMoments.length) return;
+  document.getElementById('videoWrap').scrollIntoView({ behavior:'smooth', block:'center' });
   replayQueue = [...lastMoments];
   replayActive = true;
   preview.pause();
