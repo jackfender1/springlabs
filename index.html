@@ -646,16 +646,22 @@ document.getElementById('signupBtn').onclick = async ()=>{
   const email = document.getElementById('signupEmail').value.trim();
   const password = document.getElementById('signupPassword').value;
   if(!email || !password){ gateStatus.textContent = 'Enter an email and password.'; return; }
-  gateStatus.textContent = 'Creating your account…';
+  const btn = document.getElementById('signupBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creating account…';
+  gateStatus.textContent = '';
   const { data, error } = await supabaseClient.auth.signUp({ email, password });
+  btn.disabled = false;
+  btn.textContent = 'Create Account';
   if(error){ gateStatus.textContent = error.message; return; }
   if(data.user){
     await supabaseClient.from('profiles').insert({ id: data.user.id, role: signupRole, display_name: email.split('@')[0] });
   }
   if(data.session){
+    gateStatus.textContent = 'Account created — logging you in…';
     await afterLogin();
   }else{
-    gateStatus.textContent = 'Account created — check your email to confirm, then log in.';
+    gateStatus.textContent = 'Account created! Switch to the Log In tab to continue.';
   }
 };
 
