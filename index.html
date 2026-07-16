@@ -119,6 +119,26 @@
   .analyze-row{margin-top:16px; display:flex; gap:10px; align-items:center;}
 
   .video-wrap{position:relative;}
+
+  .roster-row{
+    display:flex; justify-content:space-between; align-items:center;
+    background:var(--navy-2); border:1px solid var(--line); border-radius:6px;
+    padding:10px 14px; cursor:pointer; transition:border-color .15s ease;
+  }
+  .roster-row:hover{border-color:var(--red);}
+  .roster-row.active{border-color:var(--red); background:rgba(226,78,27,0.08);}
+  .roster-row .rr-name{font-family:'Oswald'; font-size:13.5px;}
+  .roster-row .rr-meta{font-family:'JetBrains Mono'; font-size:11px; color:var(--gray);}
+
+  .hist-entry{
+    background:var(--navy-2); border:1px solid var(--line); border-left:3px solid var(--green);
+    border-radius:6px; padding:12px 14px;
+  }
+  .hist-entry.low-score{border-left-color:var(--yellow);}
+  .hist-entry .he-top{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;}
+  .hist-entry .he-score{font-family:'JetBrains Mono'; font-weight:700; color:var(--yellow); font-size:16px;}
+  .hist-entry .he-meta{font-family:'JetBrains Mono'; font-size:10.5px; color:var(--gray); text-transform:uppercase; letter-spacing:0.05em;}
+  .hist-entry .he-summary{font-size:13px; color:var(--white); line-height:1.5;}
   .replay-overlay{
     position:absolute; left:12px; right:12px; bottom:12px;
     display:none; flex-direction:column; gap:10px;
@@ -288,7 +308,10 @@
 
       <div id="loggedInBar" style="display:none; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <span id="whoAmI" style="font-size:13px; color:var(--gray);"></span>
-        <button class="btn btn-ghost" id="logoutBtn" style="padding:6px 12px; font-size:11px;">Log Out</button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-ghost" id="progressBtn" style="padding:6px 12px; font-size:11px;">View Progress</button>
+          <button class="btn btn-ghost" id="logoutBtn" style="padding:6px 12px; font-size:11px;">Log Out</button>
+        </div>
       </div>
 
       <div id="athletePicker" style="display:none; margin-top:6px;">
@@ -336,6 +359,27 @@
       <div class="drill" id="drillBox"></div>
       <button class="btn btn-ghost" id="replayBtn" style="display:none; width:100%; margin-top:14px;">▶ Guided replay — see exactly what it saw</button>
     </div>
+  </div>
+
+  <div class="panel" id="dashboardPanel" style="display:none; margin-top:16px;">
+    <div class="panel-label">
+      <span>Progress</span>
+      <span class="mono" id="dashRosterTag"></span>
+    </div>
+
+    <div id="rosterView" style="display:none; margin-bottom:18px;">
+      <div class="dz-title" style="margin-bottom:10px;">Your roster</div>
+      <div id="rosterList" style="display:flex; flex-direction:column; gap:6px;"></div>
+    </div>
+
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:16px;">
+      <select id="dashAthleteSelect" style="flex:1; background:var(--navy-2); border:1px solid var(--line); border-radius:5px; color:var(--white); padding:10px 12px; font-size:13.5px;"></select>
+    </div>
+
+    <div id="dashChartWrap" style="margin-bottom:18px;"></div>
+
+    <div id="dashHistory" style="display:flex; flex-direction:column; gap:10px;"></div>
+    <p id="dashEmpty" style="display:none; color:var(--gray); font-size:13.5px;">No analyses saved yet for this athlete — run one from the analyzer above.</p>
   </div>
 </section>
 
@@ -772,6 +816,116 @@ document.getElementById('addAthleteBtn').onclick = async ()=>{
   await supabaseClient.from('athlete_profiles').insert({ owner_id: currentUser.id, name });
   await loadAthleteProfiles();
 };
+
+document.getElementById('progressBtn').onclick = async ()=>{
+  const panel = document.getElementById('dashboardPanel');
+  const btn = document.getElementById('progressBtn');
+  const isOpen = panel.style.display === 'block';
+  if(isOpen){
+    panel.style.display = 'none';
+    btn.textContent = 'View Progress';
+  }else{
+    panel.style.display = 'block';
+    btn.textContent = 'Hide Progress';
+    panel.scrollIntoView({ behavior:'smooth', block:'start' });
+    await loadDashboardData();
+  }
+};
+
+async function loadDashboardData(){
+  const { data: athletes } = await supabaseClient
+    .from('athlete_profiles').select('*').eq('owner_id', currentUser.id).order('created_at', { ascending:true });
+
+  const select = document.getElementById('dashAthleteSelect');
+  select.innerHTML = '';
+  (athletes || []).forEach(a=>{
+    const opt = document.createElement('option');
+    opt.value = a.id; opt.textContent = a.name;
+    select.appendChild(opt);
+  });
+
+  const isMulti = currentProfile.role === 'coach';
+  document.getElementById('dashRosterTag').textContent = isMulti ? `${(athletes||[]).length} ATHLETES` : '';
+
+  let allAnalyses = [];
+  if(athletes && athletes.length){
+    const ids = athletes.map(a=>a.id);
+    const { data } = await supabaseClient.from('analyses').select('*').in('athlete_profile_id', ids).order('created_at', { ascending:true });
+    allAnalyses = data || [];
+  }
+
+  const rosterView = document.getElementById('rosterView');
+  const rosterList = document.getElementById('rosterList');
+  if(isMulti && athletes && athletes.length > 1){
+    rosterView.style.display = 'block';
+    rosterList.innerHTML = '';
+    athletes.forEach(a=>{
+      const theirs = allAnalyses.filter(x=>x.athlete_profile_id === a.id);
+      const last = theirs[theirs.length - 1];
+      const row = document.createElement('div');
+      row.className = 'roster-row';
+      row.innerHTML = `<span class="rr-name">${a.name}</span><span class="rr-meta">${theirs.length} logged · latest ${last ? last.score : '–'}</span>`;
+      row.onclick = ()=>{
+        select.value = a.id;
+        renderAthleteHistory(a.id, allAnalyses);
+        document.querySelectorAll('.roster-row').forEach(r=>r.classList.remove('active'));
+        row.classList.add('active');
+      };
+      rosterList.appendChild(row);
+    });
+  }else{
+    rosterView.style.display = 'none';
+  }
+
+  select.onchange = ()=> renderAthleteHistory(select.value, allAnalyses);
+  if(athletes && athletes.length){ renderAthleteHistory(select.value, allAnalyses); }
+}
+
+function renderAthleteHistory(athleteId, allAnalyses){
+  const entries = allAnalyses
+    .filter(a => a.athlete_profile_id === athleteId)
+    .sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+
+  const historyEl = document.getElementById('dashHistory');
+  const emptyEl = document.getElementById('dashEmpty');
+  const chartWrap = document.getElementById('dashChartWrap');
+
+  if(!entries.length){
+    historyEl.innerHTML = '';
+    chartWrap.innerHTML = '';
+    emptyEl.style.display = 'block';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  chartWrap.innerHTML = buildScoreChartSVG(entries);
+
+  historyEl.innerHTML = '';
+  [...entries].reverse().forEach(e=>{
+    const div = document.createElement('div');
+    div.className = 'hist-entry' + (e.score < 7 ? ' low-score' : '');
+    const date = new Date(e.created_at).toLocaleDateString();
+    div.innerHTML =
+      '<div class="he-top"><span class="he-score">' + e.score + '/10</span>' +
+      '<span class="he-meta">' + e.category + ' · ' + date + '</span></div>' +
+      '<div class="he-summary">' + (e.summary || '') + '</div>';
+    historyEl.appendChild(div);
+  });
+}
+
+function buildScoreChartSVG(entries){
+  const w = 600, h = 140, pad = 24;
+  const min = 5, max = 10; // matches the analyzer's 5-10 scoring scale
+  const denom = Math.max(entries.length - 1, 1);
+  const coords = entries.map((e,i)=>{
+    const x = pad + (i/denom) * (w - pad*2);
+    const y = h - pad - ((e.score - min)/(max - min)) * (h - pad*2);
+    return { x, y };
+  });
+  const points = coords.map(c => c.x + ',' + c.y).join(' ');
+  const dots = coords.map(c => '<circle cx="' + c.x + '" cy="' + c.y + '" r="4" fill="#FFC145" />').join('');
+  return '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%; height:auto; display:block;">' +
+    '<polyline points="' + points + '" fill="none" stroke="#E24E1B" stroke-width="2.5" />' + dots + '</svg>';
+}
 
 // On page load: restore session if one exists
 (async ()=>{
