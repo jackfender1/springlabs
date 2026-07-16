@@ -7,6 +7,7 @@
 <title>SpringLabs — AI Technique Breakdown</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   :root{
     --navy:#0F1620;
@@ -260,12 +261,43 @@
     <div class="panel-label"><span>Clip Analyzer</span><span class="mono">LIVE DEMO</span></div>
 
     <div class="gate" id="gate">
-      <div class="dz-title" style="margin-bottom:8px;">Unlock with your subscriber email</div>
-      <div style="display:flex; gap:8px;">
-        <input type="email" id="emailInput" placeholder="you@email.com" style="flex:1; background:var(--navy-2); border:1px solid var(--line); border-radius:5px; color:var(--white); padding:10px 12px; font-size:13.5px;">
-        <button class="btn btn-primary" id="unlockBtn" style="padding:10px 18px;">Unlock</button>
+      <div id="authForms">
+        <div style="display:flex; gap:6px; margin-bottom:14px;">
+          <div class="lane-btn active" id="tabLogin" style="flex:1;">Log In</div>
+          <div class="lane-btn" id="tabSignup" style="flex:1;">Sign Up</div>
+        </div>
+
+        <div id="loginPane">
+          <input type="email" id="loginEmail" placeholder="you@email.com" style="width:100%; margin-bottom:8px; background:var(--navy-2); border:1px solid var(--line); border-radius:5px; color:var(--white); padding:10px 12px; font-size:13.5px;">
+          <input type="password" id="loginPassword" placeholder="Password" style="width:100%; margin-bottom:10px; background:var(--navy-2); border:1px solid var(--line); border-radius:5px; color:var(--white); padding:10px 12px; font-size:13.5px;">
+          <button class="btn btn-primary" id="loginBtn" style="width:100%;">Log In</button>
+        </div>
+
+        <div id="signupPane" style="display:none;">
+          <input type="email" id="signupEmail" placeholder="you@email.com" style="width:100%; margin-bottom:8px; background:var(--navy-2); border:1px solid var(--line); border-radius:5px; color:var(--white); padding:10px 12px; font-size:13.5px;">
+          <input type="password" id="signupPassword" placeholder="Password (min 6 characters)" style="width:100%; margin-bottom:8px; background:var(--navy-2); border:1px solid var(--line); border-radius:5px; color:var(--white); padding:10px 12px; font-size:13.5px;">
+          <div class="lanes" style="margin-bottom:10px;">
+            <div class="lane-btn active" id="roleAthlete">I'm an Athlete<small>training solo</small></div>
+            <div class="lane-btn" id="roleCoach">I'm a Coach<small>tracking a roster</small></div>
+          </div>
+          <button class="btn btn-primary" id="signupBtn" style="width:100%;">Create Account</button>
+        </div>
+
+        <p class="gate-status" id="gateStatus" style="color:var(--gray); font-size:12.5px; margin-top:10px;">No active plan? <a href="#pricing" style="color:var(--red);">See pricing</a>.</p>
       </div>
-      <p class="gate-status" id="gateStatus" style="color:var(--gray); font-size:12.5px; margin-top:8px;">No active plan? <a href="#pricing" style="color:var(--red);">See pricing</a>.</p>
+
+      <div id="loggedInBar" style="display:none; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <span id="whoAmI" style="font-size:13px; color:var(--gray);"></span>
+        <button class="btn btn-ghost" id="logoutBtn" style="padding:6px 12px; font-size:11px;">Log Out</button>
+      </div>
+
+      <div id="athletePicker" style="display:none; margin-top:6px;">
+        <div class="panel-label" style="margin-bottom:8px;"><span>Analyzing for</span></div>
+        <div style="display:flex; gap:8px;">
+          <select id="athleteSelect" style="flex:1; background:var(--navy-2); border:1px solid var(--line); border-radius:5px; color:var(--white); padding:10px 12px; font-size:13.5px;"></select>
+          <button class="btn btn-ghost" id="addAthleteBtn" style="padding:10px 14px; display:none;">+ Add</button>
+        </div>
+      </div>
     </div>
 
     <div class="lanes" id="lanes" style="display:none;"></div>
@@ -551,6 +583,20 @@ analyzeBtn.onclick = async ()=>{
     resultsEl.classList.add('show');
     preview.currentTime = 0;
     clearStatus();
+
+    // Save this result permanently, tied to whichever athlete was selected
+    if(currentAthleteProfileId){
+      supabaseClient.from('analyses').insert({
+        athlete_profile_id: currentAthleteProfileId,
+        category: selectedCategory.id,
+        score: parsed.score,
+        summary: parsed.summary,
+        strengths: parsed.strengths,
+        improvements: parsed.improvements,
+        drill: parsed.drill,
+        moments: parsed.moments || []
+      }).then(({ error })=>{ if(error) console.error('Save failed:', error.message); });
+    }
   }catch(err){
     clearStatus();
     showError('Something went wrong analyzing this clip: ' + err.message + '. Try a shorter clip or a different format.');
@@ -558,6 +604,155 @@ analyzeBtn.onclick = async ()=>{
     analyzeBtn.disabled = false;
   }
 };
+
+const supabaseClient = window.supabase.createClient(
+  'https://gdhrczeaeroduizztowz.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdkaHJjemVhZXJvZHVpenp0b3d6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMjM2MDEsImV4cCI6MjA5OTc5OTYwMX0.GtEHD_-qLK2AfPGKNuGMrtDPDClWdH-cwW--gGxHNmY'
+);
+
+const gateStatus = document.getElementById('gateStatus');
+const gate = document.getElementById('gate');
+let currentUser = null;
+let currentProfile = null;
+let currentAthleteProfileId = null;
+let signupRole = 'athlete';
+
+// Tab switching between Log In / Sign Up
+document.getElementById('tabLogin').onclick = ()=>{
+  document.getElementById('tabLogin').classList.add('active');
+  document.getElementById('tabSignup').classList.remove('active');
+  document.getElementById('loginPane').style.display = 'block';
+  document.getElementById('signupPane').style.display = 'none';
+};
+document.getElementById('tabSignup').onclick = ()=>{
+  document.getElementById('tabSignup').classList.add('active');
+  document.getElementById('tabLogin').classList.remove('active');
+  document.getElementById('signupPane').style.display = 'block';
+  document.getElementById('loginPane').style.display = 'none';
+};
+document.getElementById('roleAthlete').onclick = ()=>{
+  signupRole = 'athlete';
+  document.getElementById('roleAthlete').classList.add('active');
+  document.getElementById('roleCoach').classList.remove('active');
+};
+document.getElementById('roleCoach').onclick = ()=>{
+  signupRole = 'coach';
+  document.getElementById('roleCoach').classList.add('active');
+  document.getElementById('roleAthlete').classList.remove('active');
+};
+
+document.getElementById('signupBtn').onclick = async ()=>{
+  const email = document.getElementById('signupEmail').value.trim();
+  const password = document.getElementById('signupPassword').value;
+  if(!email || !password){ gateStatus.textContent = 'Enter an email and password.'; return; }
+  gateStatus.textContent = 'Creating your account…';
+  const { data, error } = await supabaseClient.auth.signUp({ email, password });
+  if(error){ gateStatus.textContent = error.message; return; }
+  if(data.user){
+    await supabaseClient.from('profiles').insert({ id: data.user.id, role: signupRole, display_name: email.split('@')[0] });
+  }
+  if(data.session){
+    await afterLogin();
+  }else{
+    gateStatus.textContent = 'Account created — check your email to confirm, then log in.';
+  }
+};
+
+document.getElementById('loginBtn').onclick = async ()=>{
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  if(!email || !password){ gateStatus.textContent = 'Enter your email and password.'; return; }
+  gateStatus.textContent = 'Logging in…';
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if(error){ gateStatus.textContent = error.message; return; }
+  await afterLogin();
+};
+
+document.getElementById('logoutBtn').onclick = async ()=>{
+  await supabaseClient.auth.signOut();
+  window.location.reload();
+};
+
+async function afterLogin(){
+  const { data: { user } } = await supabaseClient.auth.getUser();
+  if(!user) return;
+  currentUser = user;
+
+  let { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', user.id).single();
+  if(!profile){
+    await supabaseClient.from('profiles').insert({ id: user.id, role: 'athlete', display_name: user.email.split('@')[0] });
+    const retry = await supabaseClient.from('profiles').select('*').eq('id', user.id).single();
+    profile = retry.data;
+  }
+  currentProfile = profile;
+
+  gateStatus.textContent = 'Checking your subscription…';
+  const res = await fetch('/api/check-subscription?email=' + encodeURIComponent(user.email));
+  const subData = await res.json();
+
+  if(!subData.active){
+    gateStatus.innerHTML = 'No active plan found for that email. <a href="#pricing" style="color:var(--red);">See pricing</a>.';
+    document.getElementById('authForms').style.display = 'block';
+    document.getElementById('loggedInBar').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('authForms').style.display = 'none';
+  document.getElementById('loggedInBar').style.display = 'flex';
+  document.getElementById('whoAmI').textContent = user.email + ' · ' + profile.role;
+  document.getElementById('lanes').style.display = 'flex';
+  document.getElementById('dropzone').style.display = 'block';
+  document.getElementById('analyzeRow').style.display = 'flex';
+
+  await loadAthleteProfiles();
+}
+
+async function loadAthleteProfiles(){
+  const picker = document.getElementById('athletePicker');
+  const select = document.getElementById('athleteSelect');
+  const addBtn = document.getElementById('addAthleteBtn');
+
+  let { data: athletes } = await supabaseClient
+    .from('athlete_profiles')
+    .select('*')
+    .eq('owner_id', currentUser.id)
+    .order('created_at', { ascending: true });
+
+  if(!athletes || athletes.length === 0){
+    const defaultName = currentProfile.role === 'athlete' ? 'Me' : 'Athlete 1';
+    const { data: created } = await supabaseClient
+      .from('athlete_profiles')
+      .insert({ owner_id: currentUser.id, name: defaultName })
+      .select()
+      .single();
+    athletes = created ? [created] : [];
+  }
+
+  select.innerHTML = '';
+  athletes.forEach(a=>{
+    const opt = document.createElement('option');
+    opt.value = a.id; opt.textContent = a.name;
+    select.appendChild(opt);
+  });
+  currentAthleteProfileId = athletes[0]?.id || null;
+  select.onchange = ()=>{ currentAthleteProfileId = select.value; };
+
+  picker.style.display = 'block';
+  addBtn.style.display = currentProfile.role === 'coach' ? 'inline-block' : 'none';
+}
+
+document.getElementById('addAthleteBtn').onclick = async ()=>{
+  const name = prompt('Athlete name:');
+  if(!name) return;
+  await supabaseClient.from('athlete_profiles').insert({ owner_id: currentUser.id, name });
+  await loadAthleteProfiles();
+};
+
+// On page load: restore session if one exists
+(async ()=>{
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if(session){ await afterLogin(); }
+})();
 
 async function startCheckout(priceId){
   try{
@@ -574,50 +769,15 @@ async function startCheckout(priceId){
   }
 }
 
-const gateStatus = document.getElementById('gateStatus');
-const gate = document.getElementById('gate');
-
-async function unlockWithEmail(email){
-  gateStatus.textContent = 'Checking your subscription…';
-  try{
-    const res = await fetch('/api/check-subscription?email=' + encodeURIComponent(email));
-    const data = await res.json();
-    if(data.active){
-      try{ localStorage.setItem('springlabs_email', email); }catch(e){}
-      gate.style.display = 'none';
-      document.getElementById('lanes').style.display = 'flex';
-      document.getElementById('dropzone').style.display = 'block';
-      document.getElementById('analyzeRow').style.display = 'flex';
-    }else{
-      gateStatus.innerHTML = 'No active plan found for that email. <a href="#pricing" style="color:var(--red);">See pricing</a>.';
-    }
-  }catch(err){
-    gateStatus.textContent = 'Could not verify right now: ' + err.message;
-  }
-}
-
-document.getElementById('unlockBtn').onclick = ()=>{
-  const email = document.getElementById('emailInput').value.trim();
-  if(!email){ gateStatus.textContent = 'Enter the email you subscribed with.'; return; }
-  unlockWithEmail(email);
-};
-
-// Auto-unlock returning subscribers, and show a banner after checkout redirect
+// Show a banner after checkout redirect
 (function(){
   const params = new URLSearchParams(window.location.search);
   if(params.get('checkout') === 'success'){
     const toast = document.getElementById('toast');
-    toast.textContent = "Payment successful — enter your email below to unlock the analyzer.";
+    toast.textContent = "Payment successful — log in or sign up below with the same email to unlock the analyzer.";
     toast.classList.add('show');
-    setTimeout(()=> toast.classList.remove('show'), 5000);
+    setTimeout(()=> toast.classList.remove('show'), 6000);
   }
-  try{
-    const saved = localStorage.getItem('springlabs_email');
-    if(saved){
-      document.getElementById('emailInput').value = saved;
-      unlockWithEmail(saved);
-    }
-  }catch(e){}
 })();
 
 const replayOverlay = document.getElementById('replayOverlay');
