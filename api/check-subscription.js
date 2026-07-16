@@ -24,22 +24,22 @@ module.exports = async function handler(req, res) {
   const stripe = new Stripe(STRIPE_SECRET_KEY);
 
   try {
-    const customers = await stripe.customers.list({ email, limit: 1 });
+    const customers = await stripe.customers.list({
+      email,
+      limit: 1,
+      expand: ['data.subscriptions']
+    });
     if (customers.data.length === 0) {
       return res.status(200).json({ active: false });
     }
 
     const customer = customers.data[0];
-    const subs = await stripe.subscriptions.list({
-      customer: customer.id,
-      status: 'active',
-      limit: 1,
-    });
+    const activeSub = (customer.subscriptions?.data || []).find(s => s.status === 'active');
 
-    const active = subs.data.length > 0;
+    const active = !!activeSub;
     let tier = null;
     if (active) {
-      const priceId = subs.data[0].items.data[0].price.id;
+      const priceId = activeSub.items.data[0].price.id;
       tier = PRICE_TIER_MAP[priceId] || null;
     }
     res.status(200).json({ active, tier });
