@@ -728,18 +728,21 @@ async function afterLogin(){
   const { data: { user } } = await supabaseClient.auth.getUser();
   if(!user) return;
   currentUser = user;
+  gateStatus.textContent = 'Checking your subscription…';
 
-  let { data: profile } = await supabaseClient.from('profiles').select('*').eq('id', user.id).single();
+  // These two don't depend on each other, so run them at the same time
+  const [profileResult, subData] = await Promise.all([
+    supabaseClient.from('profiles').select('*').eq('id', user.id).single(),
+    fetch('/api/check-subscription?email=' + encodeURIComponent(user.email)).then(r => r.json())
+  ]);
+
+  let profile = profileResult.data;
   if(!profile){
     await supabaseClient.from('profiles').insert({ id: user.id, role: 'athlete', display_name: user.email.split('@')[0] });
     const retry = await supabaseClient.from('profiles').select('*').eq('id', user.id).single();
     profile = retry.data;
   }
   currentProfile = profile;
-
-  gateStatus.textContent = 'Checking your subscription…';
-  const res = await fetch('/api/check-subscription?email=' + encodeURIComponent(user.email));
-  const subData = await res.json();
 
   if(!subData.active){
     gateStatus.innerHTML = 'No active plan found for that email. <a href="#pricing" style="color:var(--red);">See pricing</a>.';
