@@ -4,6 +4,12 @@
 
 const Stripe = require('stripe');
 
+const PRICE_TIER_MAP = {
+  'price_1TtJ0eArgWZv9lLtDnEGCyty': 'athlete',
+  'price_1TtJ1NArgWZv9lLtGpUaEXxH': 'coach',
+  'price_1TtJ33ArgWZv9lLtDe6VRUh1': 'program',
+};
+
 module.exports = async function handler(req, res) {
   const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
   if (!STRIPE_SECRET_KEY) {
@@ -31,8 +37,12 @@ module.exports = async function handler(req, res) {
     });
 
     const active = subs.data.length > 0;
-    const plan = active ? subs.data[0].items.data[0].price.nickname || null : null;
-    res.status(200).json({ active, plan });
+    let tier = null;
+    if (active) {
+      const priceId = subs.data[0].items.data[0].price.id;
+      tier = PRICE_TIER_MAP[priceId] || null;
+    }
+    res.status(200).json({ active, tier });
   } catch (err) {
     res.status(500).json({ error: 'Stripe error: ' + err.message });
   }
