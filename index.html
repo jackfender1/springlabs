@@ -615,6 +615,7 @@ const gate = document.getElementById('gate');
 let currentUser = null;
 let currentProfile = null;
 let currentAthleteProfileId = null;
+let currentTier = null;
 let signupRole = 'athlete';
 
 // Tab switching between Log In / Sign Up
@@ -696,6 +697,7 @@ async function afterLogin(){
     document.getElementById('loggedInBar').style.display = 'none';
     return;
   }
+  currentTier = subData.tier;
 
   document.getElementById('authForms').style.display = 'none';
   document.getElementById('loggedInBar').style.display = 'flex';
@@ -705,6 +707,12 @@ async function afterLogin(){
   document.getElementById('analyzeRow').style.display = 'flex';
 
   await loadAthleteProfiles();
+}
+
+function tierLimit(){
+  if(currentTier === 'program') return Infinity;
+  if(currentTier === 'coach') return 15;
+  return 1; // athlete tier, or unknown — solo use only
 }
 
 async function loadAthleteProfiles(){
@@ -738,10 +746,21 @@ async function loadAthleteProfiles(){
   select.onchange = ()=>{ currentAthleteProfileId = select.value; };
 
   picker.style.display = 'block';
-  addBtn.style.display = currentProfile.role === 'coach' ? 'inline-block' : 'none';
+
+  const limit = tierLimit();
+  const atLimit = athletes.length >= limit;
+  addBtn.style.display = limit > 1 ? 'inline-block' : 'none';
+  addBtn.disabled = atLimit;
+  addBtn.textContent = atLimit ? `+ Add (limit ${limit} reached)` : (limit === Infinity ? '+ Add' : `+ Add (${athletes.length}/${limit})`);
 }
 
 document.getElementById('addAthleteBtn').onclick = async ()=>{
+  const { data: existing } = await supabaseClient
+    .from('athlete_profiles').select('id').eq('owner_id', currentUser.id);
+  if((existing?.length || 0) >= tierLimit()){
+    alert(`Your plan allows up to ${tierLimit()} athlete profiles. Upgrade to add more.`);
+    return;
+  }
   const name = prompt('Athlete name:');
   if(!name) return;
   await supabaseClient.from('athlete_profiles').insert({ owner_id: currentUser.id, name });
