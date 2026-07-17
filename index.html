@@ -331,6 +331,7 @@
       <div id="loggedInBar" style="display:none; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <span id="whoAmI" style="font-size:13px; color:var(--gray);"></span>
         <div style="display:flex; gap:8px;">
+          <button class="btn btn-ghost" id="teamPanelBtn" style="padding:6px 12px; font-size:11px; display:none;">Team</button>
           <button class="btn btn-ghost" id="progressBtn" style="padding:6px 12px; font-size:11px;">View Progress</button>
           <button class="btn btn-ghost" id="logoutBtn" style="padding:6px 12px; font-size:11px;">Log Out</button>
         </div>
@@ -381,6 +382,18 @@
       <div class="drill" id="drillBox"></div>
       <button class="btn btn-ghost" id="replayBtn" style="display:none; width:100%; margin-top:14px;">▶ Guided replay — see exactly what it saw</button>
     </div>
+  </div>
+
+  <div class="panel" id="teamPanel" style="display:none; margin-top:16px;">
+    <div class="panel-label"><span>Team</span><span class="mono" id="teamOrgName"></span></div>
+    <div id="teamMembers" style="display:flex; flex-direction:column; gap:6px; margin-bottom:16px;"></div>
+    <div class="dz-title" style="margin-bottom:8px;">Invite a coach</div>
+    <div style="display:flex; gap:8px;">
+      <input type="email" id="inviteEmail" placeholder="coach@email.com" style="flex:1; background:var(--navy-2); border:1px solid var(--line); border-radius:5px; color:var(--white); padding:10px 12px; font-size:13.5px;">
+      <button class="btn btn-primary" id="inviteBtn" style="padding:10px 16px;">Invite</button>
+    </div>
+    <p style="color:var(--gray); font-size:12px; margin-top:8px;">They'll be added automatically the next time they sign up or log in with this exact email — no email gets sent yet, so let them know directly for now.</p>
+    <p id="inviteStatus" style="font-size:12.5px; margin-top:6px;"></p>
   </div>
 
   <div class="panel" id="dashboardPanel" style="display:none; margin-top:16px;">
@@ -802,12 +815,34 @@ async function afterLogin(){
   }
   currentTier = subData.tier;
 
+  // Check if this profile was invited into an existing team, or needs its own new one
+  if(!profile.organization_id){
+    const { data: invite } = await supabaseClient
+      .from('organization_invites').select('*').eq('email', user.email).limit(1).maybeSingle();
+    if(invite){
+      await supabaseClient.from('profiles').update({ organization_id: invite.organization_id }).eq('id', user.id);
+      await supabaseClient.from('organization_invites').delete().eq('id', invite.id);
+      currentProfile.organization_id = invite.organization_id;
+    }else if(currentTier === 'program'){
+      const { data: org } = await supabaseClient
+        .from('organizations')
+        .insert({ owner_id: user.id, name: (profile.display_name || 'Team') + "'s Program" })
+        .select().single();
+      if(org){
+        await supabaseClient.from('profiles').update({ organization_id: org.id }).eq('id', user.id);
+        currentProfile.organization_id = org.id;
+      }
+    }
+  }
+
   document.getElementById('authForms').style.display = 'none';
   document.getElementById('loggedInBar').style.display = 'flex';
   document.getElementById('whoAmI').textContent = user.email + ' · ' + profile.role;
   document.getElementById('lanes').style.display = 'flex';
   document.getElementById('dropzone').style.display = 'block';
   document.getElementById('analyzeRow').style.display = 'flex';
+
+  document.getElementById('teamPanelBtn').style.display = currentTier === 'program' ? 'inline-block' : 'none';
 
   await loadAthleteProfiles();
 }
@@ -822,18 +857,19 @@ async function loadAthleteProfiles(){
   const picker = document.getElementById('athletePicker');
   const select = document.getElementById('athleteSelect');
   const addBtn = document.getElementById('addAthleteBtn');
+  const orgId = currentProfile.organization_id;
 
-  let { data: athletes } = await supabaseClient
-    .from('athlete_profiles')
-    .select('*')
-    .eq('owner_id', currentUser.id)
-    .order('created_at', { ascending: true });
+  const query = orgId
+    ? supabaseClient.from('athlete_profiles').select('*').eq('organization_id', orgId)
+    : supabaseClient.from('athlete_profiles').select('*').eq('owner_id', currentUser.id);
+
+  let { data: athletes } = await query.order('created_at', { ascending: true });
 
   if(!athletes || athletes.length === 0){
     const defaultName = currentProfile.role === 'athlete' ? 'Me' : 'Athlete 1';
     const { data: created } = await supabaseClient
       .from('athlete_profiles')
-      .insert({ owner_id: currentUser.id, name: defaultName })
+      .insert({ owner_id: currentUser.id, organization_id: orgId || null, name: defaultName })
       .select()
       .single();
     athletes = created ? [created] : [];
@@ -858,16 +894,79 @@ async function loadAthleteProfiles(){
 }
 
 document.getElementById('addAthleteBtn').onclick = async ()=>{
-  const { data: existing } = await supabaseClient
-    .from('athlete_profiles').select('id').eq('owner_id', currentUser.id);
+  const orgId = currentProfile.organization_id;
+  const countQuery = orgId
+    ? supabaseClient.from('athlete_profiles').select('id').eq('organization_id', orgId)
+    : supabaseClient.from('athlete_profiles').select('id').eq('owner_id', currentUser.id);
+  const { data: existing } = await countQuery;
+
   if((existing?.length || 0) >= tierLimit()){
     alert(`Your plan allows up to ${tierLimit()} athlete profiles. Upgrade to add more.`);
     return;
   }
   const name = prompt('Athlete name:');
   if(!name) return;
-  await supabaseClient.from('athlete_profiles').insert({ owner_id: currentUser.id, name });
+  await supabaseClient.from('athlete_profiles').insert({ owner_id: currentUser.id, organization_id: orgId || null, name });
   await loadAthleteProfiles();
+};
+
+document.getElementById('teamPanelBtn').onclick = async ()=>{
+  const panel = document.getElementById('teamPanel');
+  const btn = document.getElementById('teamPanelBtn');
+  const isOpen = panel.style.display === 'block';
+  if(isOpen){
+    panel.style.display = 'none';
+    btn.textContent = 'Team';
+  }else{
+    panel.style.display = 'block';
+    btn.textContent = 'Hide Team';
+    panel.scrollIntoView({ behavior:'smooth', block:'start' });
+    await loadTeamData();
+  }
+};
+
+async function loadTeamData(){
+  const orgId = currentProfile.organization_id;
+  if(!orgId) return;
+
+  const { data: org } = await supabaseClient.from('organizations').select('*').eq('id', orgId).single();
+  document.getElementById('teamOrgName').textContent = org ? org.name.toUpperCase() : '';
+
+  const { data: members } = await supabaseClient.from('profiles').select('*').eq('organization_id', orgId);
+  const list = document.getElementById('teamMembers');
+  list.innerHTML = '';
+  (members || []).forEach(m=>{
+    const row = document.createElement('div');
+    row.className = 'roster-row';
+    row.style.cursor = 'default';
+    const isOwner = org && m.id === org.owner_id;
+    row.innerHTML = `<span class="rr-name">${m.display_name || 'Coach'}${isOwner ? ' (Owner)' : ''}</span><span class="rr-meta">${m.role}</span>`;
+    list.appendChild(row);
+  });
+
+  const { data: pending } = await supabaseClient.from('organization_invites').select('*').eq('organization_id', orgId);
+  (pending || []).forEach(inv=>{
+    const row = document.createElement('div');
+    row.className = 'roster-row';
+    row.style.cursor = 'default';
+    row.innerHTML = `<span class="rr-name">${inv.email}</span><span class="rr-meta">pending</span>`;
+    list.appendChild(row);
+  });
+}
+
+document.getElementById('inviteBtn').onclick = async ()=>{
+  const email = document.getElementById('inviteEmail').value.trim().toLowerCase();
+  const status = document.getElementById('inviteStatus');
+  const orgId = currentProfile.organization_id;
+  if(!email){ status.textContent = 'Enter an email to invite.'; return; }
+  if(!orgId){ status.textContent = 'No team found for your account yet.'; return; }
+
+  const { error } = await supabaseClient.from('organization_invites').insert({ organization_id: orgId, email });
+  if(error){ status.textContent = 'Could not send invite: ' + error.message; return; }
+
+  status.textContent = 'Invited — they\'ll join automatically once they sign up or log in with that email.';
+  document.getElementById('inviteEmail').value = '';
+  await loadTeamData();
 };
 
 document.getElementById('progressBtn').onclick = async ()=>{
@@ -886,8 +985,11 @@ document.getElementById('progressBtn').onclick = async ()=>{
 };
 
 async function loadDashboardData(){
-  const { data: athletes } = await supabaseClient
-    .from('athlete_profiles').select('*').eq('owner_id', currentUser.id).order('created_at', { ascending:true });
+  const orgId = currentProfile.organization_id;
+  const athletesQuery = orgId
+    ? supabaseClient.from('athlete_profiles').select('*').eq('organization_id', orgId)
+    : supabaseClient.from('athlete_profiles').select('*').eq('owner_id', currentUser.id);
+  const { data: athletes } = await athletesQuery.order('created_at', { ascending:true });
 
   const select = document.getElementById('dashAthleteSelect');
   select.innerHTML = '';
@@ -897,7 +999,7 @@ async function loadDashboardData(){
     select.appendChild(opt);
   });
 
-  const isMulti = currentProfile.role === 'coach';
+  const isMulti = currentProfile.role === 'coach' || !!currentProfile.organization_id;
   document.getElementById('dashRosterTag').textContent = isMulti ? `${(athletes||[]).length} ATHLETES` : '';
 
   let allAnalyses = [];
