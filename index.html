@@ -120,6 +120,39 @@
 
   .video-wrap{position:relative;}
 
+  #chatWidget{ position:fixed; bottom:22px; right:22px; z-index:100; font-family:'Inter',sans-serif; }
+  #chatToggleBtn{
+    width:54px; height:54px; border-radius:50%; border:none; cursor:pointer;
+    background:var(--red); color:var(--white); font-size:22px;
+    box-shadow:0 4px 14px rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center;
+  }
+  #chatPanel{
+    display:none; position:absolute; bottom:66px; right:0; width:320px; max-width:85vw;
+    background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden;
+    box-shadow:0 8px 30px rgba(0,0,0,0.5); flex-direction:column;
+  }
+  #chatPanel.open{ display:flex; }
+  .chat-header{
+    display:flex; justify-content:space-between; align-items:center;
+    background:var(--navy-2); padding:12px 14px; font-family:'Oswald'; font-size:13px;
+    letter-spacing:0.02em; border-bottom:1px solid var(--line);
+  }
+  .chat-header button{ background:none; border:none; color:var(--gray); font-size:14px; cursor:pointer; }
+  #chatMessages{ padding:14px; height:280px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; }
+  .chat-msg{ font-size:13px; line-height:1.5; padding:8px 11px; border-radius:8px; max-width:85%; }
+  .chat-msg.bot{ background:var(--navy-2); color:var(--white); align-self:flex-start; }
+  .chat-msg.user{ background:var(--red); color:var(--white); align-self:flex-end; }
+  .chat-msg.typing{ color:var(--gray); font-style:italic; }
+  .chat-input-row{ display:flex; gap:6px; padding:10px; border-top:1px solid var(--line); }
+  .chat-input-row input{
+    flex:1; background:var(--navy-2); border:1px solid var(--line); border-radius:5px;
+    color:var(--white); padding:9px 10px; font-size:13px;
+  }
+  .chat-input-row button{
+    background:var(--red); color:var(--white); border:none; border-radius:5px;
+    padding:9px 14px; font-size:12.5px; cursor:pointer; font-family:'Oswald';
+  }
+
   #reportView{
     position:absolute; left:-9999px; top:0; width:750px;
     background:#fff; color:#111; font-family:'Inter',sans-serif; padding:40px;
@@ -255,9 +288,18 @@
   .price-card .btn{width:100%;}
 
   footer{
-    padding:28px 6vw; border-top:1px solid var(--line); text-align:center;
+    padding:32px 6vw; border-top:1px solid var(--line);
     color:var(--gray); font-size:12.5px;
   }
+  .footer-inner{
+    max-width:1200px; margin:0 auto; display:flex; align-items:center;
+    justify-content:space-between; flex-wrap:wrap; gap:12px;
+  }
+  .footer-brand{font-family:'Oswald'; font-weight:600; font-size:14px; color:var(--white); letter-spacing:0.02em;}
+  .footer-links{display:flex; gap:20px; flex-wrap:wrap;}
+  .footer-links a{color:var(--gray); text-decoration:none; font-size:12.5px;}
+  .footer-links a:hover{color:var(--red);}
+  .footer-copy{color:var(--gray);}
 
   @media (max-width:860px){
     .hero{grid-template-columns:1fr;}
@@ -488,7 +530,16 @@
   </div>
 </section>
 
-<footer>SpringLabs — working prototype. Payments not yet connected. Built to show the core idea end-to-end.</footer>
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">SpringLabs</div>
+    <div class="footer-links">
+      <a href="mailto:springlabs3@gmail.com">Contact: springlabs3@gmail.com</a>
+      <a href="/privacy.html">Privacy Policy</a>
+    </div>
+    <div class="footer-copy">© 2026 SpringLabs</div>
+  </div>
+</footer>
 
 <div class="toast" id="toast"></div>
 
@@ -1223,7 +1274,79 @@ function endReplay(){
 }
 
 document.getElementById('replayBtn').onclick = runGuidedReplay;
+
+// --- Support chat widget ---
+let chatHistory = [];
+
+const chatToggleBtn = document.getElementById('chatToggleBtn');
+const chatPanel = document.getElementById('chatPanel');
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+
+chatToggleBtn.onclick = ()=>{
+  chatPanel.classList.toggle('open');
+  if(chatPanel.classList.contains('open')) chatInput.focus();
+};
+document.getElementById('chatCloseBtn').onclick = ()=> chatPanel.classList.remove('open');
+
+function addChatBubble(text, who){
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + who;
+  div.textContent = text;
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  return div;
+}
+
+async function sendChatMessage(){
+  const text = chatInput.value.trim();
+  if(!text) return;
+  chatInput.value = '';
+  addChatBubble(text, 'user');
+  chatHistory.push({ role:'user', content: text });
+
+  const typingEl = addChatBubble('Typing…', 'bot typing');
+
+  try{
+    const res = await fetch('/api/support-chat', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ messages: chatHistory })
+    });
+    const data = await res.json();
+    typingEl.remove();
+    if(data.reply){
+      addChatBubble(data.reply, 'bot');
+      chatHistory.push({ role:'assistant', content: data.reply });
+    }else{
+      addChatBubble('Sorry, something went wrong. Try again or email springlabs3@gmail.com.', 'bot');
+    }
+  }catch(err){
+    typingEl.remove();
+    addChatBubble('Connection error — try again in a moment.', 'bot');
+  }
+}
+
+document.getElementById('chatSendBtn').onclick = sendChatMessage;
+chatInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') sendChatMessage(); });
 </script>
+
+<div id="chatWidget">
+  <button id="chatToggleBtn" aria-label="Open support chat">💬</button>
+  <div id="chatPanel">
+    <div class="chat-header">
+      <span>SpringLabs Support</span>
+      <button id="chatCloseBtn" aria-label="Close chat">✕</button>
+    </div>
+    <div id="chatMessages">
+      <div class="chat-msg bot">Hey! Ask me anything about SpringLabs — pricing, how the analyzer works, your account, whatever.</div>
+    </div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" placeholder="Type a message…">
+      <button id="chatSendBtn">Send</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
