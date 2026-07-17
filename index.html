@@ -541,6 +541,23 @@
   </div>
 </footer>
 
+<div id="chatWidget">
+  <button id="chatToggleBtn" aria-label="Open support chat">💬</button>
+  <div id="chatPanel">
+    <div class="chat-header">
+      <span>SpringLabs Support</span>
+      <button id="chatCloseBtn" aria-label="Close chat">✕</button>
+    </div>
+    <div id="chatMessages">
+      <div class="chat-msg bot">Hey! Ask me anything about SpringLabs — pricing, how the analyzer works, your account, whatever.</div>
+    </div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" placeholder="Type a message…">
+      <button id="chatSendBtn">Send</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <div id="reportView">
@@ -1330,23 +1347,6 @@ async function sendChatMessage(){
 document.getElementById('chatSendBtn').onclick = sendChatMessage;
 chatInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') sendChatMessage(); });
 </script>
-
-<div id="chatWidget">
-  <button id="chatToggleBtn" aria-label="Open support chat">💬</button>
-  <div id="chatPanel">
-    <div class="chat-header">
-      <span>SpringLabs Support</span>
-      <button id="chatCloseBtn" aria-label="Close chat">✕</button>
-    </div>
-    <div id="chatMessages">
-      <div class="chat-msg bot">Hey! Ask me anything about SpringLabs — pricing, how the analyzer works, your account, whatever.</div>
-    </div>
-    <div class="chat-input-row">
-      <input type="text" id="chatInput" placeholder="Type a message…">
-      <button id="chatSendBtn">Send</button>
-    </div>
-  </div>
-</div>
 
 </body>
 </html>
