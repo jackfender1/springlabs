@@ -120,6 +120,30 @@
 
   .video-wrap{position:relative;}
 
+  .trim-slider-wrap{ position:relative; height:32px; }
+  .trim-track{
+    position:absolute; top:14px; left:0; right:0; height:4px;
+    background:var(--line); border-radius:2px;
+  }
+  .trim-range{
+    position:absolute; top:14px; height:4px; background:var(--red); border-radius:2px;
+  }
+  .trim-slider-wrap input[type="range"]{
+    position:absolute; top:0; left:0; width:100%; height:32px;
+    -webkit-appearance:none; appearance:none; background:transparent; pointer-events:none; margin:0;
+  }
+  .trim-slider-wrap input[type="range"]::-webkit-slider-thumb{
+    -webkit-appearance:none; pointer-events:all;
+    width:18px; height:18px; border-radius:50%; background:var(--yellow);
+    border:2px solid var(--navy); cursor:pointer; margin-top:0;
+  }
+  .trim-slider-wrap input[type="range"]::-moz-range-thumb{
+    pointer-events:all; width:18px; height:18px; border-radius:50%;
+    background:var(--yellow); border:2px solid var(--navy); cursor:pointer;
+  }
+  .trim-slider-wrap input[type="range"]::-webkit-slider-runnable-track{ background:transparent; }
+  .trim-slider-wrap input[type="range"]::-moz-range-track{ background:transparent; }
+
   #chatWidget{ position:fixed; bottom:22px; right:22px; z-index:100; font-family:'Inter',sans-serif; }
   #chatToggleBtn{
     width:54px; height:54px; border-radius:50%; border:none; cursor:pointer;
@@ -401,6 +425,20 @@
       <div class="replay-overlay" id="replayOverlay"></div>
     </div>
 
+    <div id="trimControls" style="display:none; margin-top:12px;">
+      <div class="panel-label" style="margin-bottom:8px;">
+        <span>Trim clip</span>
+        <span class="mono" id="trimRangeLabel"></span>
+      </div>
+      <div class="trim-slider-wrap">
+        <div class="trim-track"></div>
+        <div class="trim-range" id="trimRangeFill"></div>
+        <input type="range" id="trimStartSlider" min="0" max="100" value="0" step="0.1">
+        <input type="range" id="trimEndSlider" min="0" max="100" value="100" step="0.1">
+      </div>
+      <p style="color:var(--gray); font-size:12px; margin-top:6px;">Drag either handle to select just the part of the clip you want analyzed — the AI only looks at what's inside this range.</p>
+    </div>
+
     <div class="analyze-row" id="analyzeRow" style="display:none;">
       <button class="btn btn-primary btn-analyze" id="analyzeBtn" disabled>Analyze technique</button>
     </div>
@@ -599,6 +637,9 @@ let videoFile = null;
 let lastMoments = [];
 let lastAthletes = [];
 let lastAllAnalyses = [];
+let videoDuration = 0;
+let trimStart = 0;
+let trimEnd = 0;
 
 const lanesEl = document.getElementById('lanes');
 CATEGORIES.forEach((c,i)=>{
@@ -657,11 +698,54 @@ function handleFile(file){
     preview.style.display = 'none';
     analyzeBtn.disabled = true;
   };
+  preview.onloadedmetadata = ()=>{
+    videoDuration = preview.duration;
+    trimStart = 0;
+    trimEnd = videoDuration;
+    document.getElementById('trimStartSlider').max = videoDuration;
+    document.getElementById('trimEndSlider').max = videoDuration;
+    document.getElementById('trimStartSlider').value = 0;
+    document.getElementById('trimEndSlider').value = videoDuration;
+    document.getElementById('trimControls').style.display = 'block';
+    updateTrimUI();
+  };
   preview.src = URL.createObjectURL(file);
   preview.style.display = 'block';
   analyzeBtn.disabled = false;
   resultsEl.classList.remove('show');
 }
+
+function formatTime(t){
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60);
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function updateTrimUI(){
+  const pctStart = (trimStart / videoDuration) * 100;
+  const pctEnd = (trimEnd / videoDuration) * 100;
+  document.getElementById('trimRangeFill').style.left = pctStart + '%';
+  document.getElementById('trimRangeFill').style.width = (pctEnd - pctStart) + '%';
+  document.getElementById('trimRangeLabel').textContent =
+    formatTime(trimStart) + ' – ' + formatTime(trimEnd) + ' (' + formatTime(trimEnd - trimStart) + ' selected)';
+}
+
+const trimStartSlider = document.getElementById('trimStartSlider');
+const trimEndSlider = document.getElementById('trimEndSlider');
+const minGap = 0.5; // seconds — keep at least a small usable window
+
+trimStartSlider.addEventListener('input', ()=>{
+  trimStart = Math.min(parseFloat(trimStartSlider.value), trimEnd - minGap);
+  trimStartSlider.value = trimStart;
+  preview.currentTime = trimStart;
+  updateTrimUI();
+});
+trimEndSlider.addEventListener('input', ()=>{
+  trimEnd = Math.max(parseFloat(trimEndSlider.value), trimStart + minGap);
+  trimEndSlider.value = trimEnd;
+  preview.currentTime = trimEnd;
+  updateTrimUI();
+});
 
 function setStatus(msg){
   statusText.textContent = msg;
@@ -673,13 +757,15 @@ function showError(msg){
   errorLine.classList.add('show');
 }
 
-async function extractFrames(videoEl, count){
+async function extractFrames(videoEl, count, startTime, endTime){
   await new Promise((resolve, reject)=>{
     if(videoEl.readyState >= 1) return resolve();
     videoEl.onloadedmetadata = resolve;
     videoEl.onerror = ()=>reject(new Error('Could not read video metadata'));
   });
-  const duration = videoEl.duration;
+  const rangeStart = startTime ?? 0;
+  const rangeEnd = endTime ?? videoEl.duration;
+  const rangeDuration = rangeEnd - rangeStart;
   const canvas = document.createElement('canvas');
   const maxW = 480;
   const scale = Math.min(1, maxW / videoEl.videoWidth);
@@ -689,7 +775,7 @@ async function extractFrames(videoEl, count){
   const frames = [];
   const timestamps = [];
   for(let i=0;i<count;i++){
-    const t = (duration * (i+0.5)) / count;
+    const t = rangeStart + (rangeDuration * (i+0.5)) / count;
     await new Promise((resolve, reject)=>{
       videoEl.onseeked = resolve;
       videoEl.onerror = ()=>reject(new Error('Could not read frame'));
@@ -710,7 +796,7 @@ analyzeBtn.onclick = async ()=>{
   setStatus('Reading frames…');
 
   try{
-    const { frames, timestamps } = await extractFrames(preview, 5);
+    const { frames, timestamps } = await extractFrames(preview, 5, trimStart, trimEnd);
     setStatus('Coach is reviewing the clip…');
 
     // Calls our own backend (server.js), which holds the real API key.
@@ -756,7 +842,7 @@ analyzeBtn.onclick = async ()=>{
     replayBtn.style.display = lastMoments.length ? 'inline-block' : 'none';
 
     resultsEl.classList.add('show');
-    preview.currentTime = 0;
+    preview.currentTime = trimStart;
     clearStatus();
 
     // Save this result permanently, tied to whichever athlete was selected
@@ -1249,7 +1335,7 @@ function runGuidedReplay(){
   replayQueue = [...lastMoments];
   replayActive = true;
   preview.pause();
-  preview.currentTime = 0;
+  preview.currentTime = trimStart;
   replayOverlay.style.display = 'none';
   preview.controls = false;
 
